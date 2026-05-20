@@ -16,6 +16,62 @@ Tech Stack
 ## This template assumes you already..
 - Know how to use **Docker** and **Docker Compose**.
 - Know how to use **MongoDB**.
+- Have registered an App at the Discord Developer Portal.
 - Have **Node.js** and `npm` to install `package-lock.json` dependencies.
 - Have a virutual environment for **Python** and `pip` to install dependencies in `requirements.txt`.
   - I recommend making a virtual environment within the `core` folder for there you can install the packages locally and run the database so that it won't mess with your global environment.
+
+## Getting Started (Local Development)
+
+### 1. Configuration
+Before running the project, you must configure your environment variables.
+
+Rename the provided .env.example file to .env in the root directory.
+
+Fill in the required credentials:
+
+TOKEN, CLIENTID, GUILDID (From the Discord Developer Portal)
+
+DBURI (Your MongoDB connection string)
+
+APITOKEN (Create a random, secure string for the WebSocket handshake between the bot and backend)
+
+### 2. Running with Docker (Recommended)
+Because the app is fully containerized, the fastest way to get both the frontend and backend running together is via Docker Compose.
+
+Bash
+# Build the images and spin up the containers in the background
+docker-compose up --build -d
+To view the live logs and verify that the WebSocket connection was established successfully:
+
+Bash
+docker-compose logs -f
+### 3. Running Manually (Localhost)
+If you need to edit code and debug locally without rebuilding containers, run the services in two separate terminals.
+
+Terminal 1: Start the Python Backend
+
+Bash
+cd core
+# Create and activate a virtual environment
+python -m venv venv
+
+# On Windows:
+venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
+
+# Install dependencies and run
+pip install -r requirements.txt
+python main.py
+Terminal 2: Start the Discord Bot Frontend
+
+Bash
+cd bot
+
+# Install Node dependencies
+npm install
+
+# Build and run the bot 
+npm run build
+npm start
