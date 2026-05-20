@@ -1,0 +1,20 @@
+# ==========================================
+# BOILERPLATE CONFIGURATION TEMPLATE
+# Copy this file to PROJECT_ROOT/.env and fill in your values
+# ==========================================
+
+# WebSockets API Configuration
+APIURL=http://localhost:8000
+APITOKEN=your_secure_websocket_token_here
+
+# Database Configuration (MongoDB)
+DBENGINE=mongodb
+DBURI=mongodb+srv://<username>:<password>@<cluster-url>/?retryWrites=true&w=majority&appName=YourAppName
+
+# Security
+SALT=your_random_salt_string_here
+
+# Discord Bot Configuration
+TOKEN=your_discord_bot_token_here
+CLIENTID=your_discord_bot_client_id_here
+GUILDID=your_discord_server_id_here

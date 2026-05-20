@@ -1,0 +1,33 @@
+services:
+  core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    container_name: bot-core
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./core:/app
+      - /app/__pycache__
+
+  bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: bot-runtime
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    env_file:
+      - .env
+    environment:
+      - APIURL=http://core:8000
+    depends_on:
+      - core
+    volumes:
+      - ./bot:/usr/src/app
+      - /usr/src/app/node_modules

@@ -1,0 +1,23 @@
+# --- Python Specific ---
+__pycache__/
+core/db/__pycache__/
+core/db/interfaces/__pycache__/
+core/db/mongodb/__pycache__/
+core/logic/__pycache__/
+*.pyc
+.venv/
+core/.venv/
+core/venv/
+
+# --- JavaScript / Bot Specific ---
+bot/dist/
+node_modules/
+bot/node_modules/
+package-lock.json
+
+# --- App / Secrets ---
+.env
+*.log
+
+# --- Project Specific ---
+.vscode/
