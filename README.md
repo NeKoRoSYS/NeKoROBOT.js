@@ -1,4 +1,4 @@
-# NeKoROBOT.js
+# NeKoRoBOT.js
 
 A full-stack Discord.js Bot template:
 
