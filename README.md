@@ -11,17 +11,49 @@
 </div>
 <br>
 
-<a target="_blank" rel="noopener noreferrer" href="https://github.com/yusufyusie/yusufyusie/blob/main/line.gif">
-  <img src="https://github.com/yusufyusie/yusufyusie/raw/main/line.gif" alt="divider" style="max-width: 100%; display: inline-block;"/>
-</a>
+![GitHub Repo stars](https://img.shields.io/github/stars/NeKoRoSYS/NeKoRoBOT.js?style=for-the-badge&color=%23FFD700)
+ ![GitHub Release](https://img.shields.io/github/v/release/NeKoRoSYS/NeKoRoBOT.js?display_name=tag&style=for-the-badge) ![Size](https://img.shields.io/github/repo-size/NeKoRoSYS/NeKoRoBOT.js?style=for-the-badge) ![GitHub last commit](https://img.shields.io/github/last-commit/NeKoRoSYS/NeKoRoBOT.js?style=for-the-badge) ![GitHub contributors](https://img.shields.io/github/contributors/NeKoRoSYS/NeKoRoBOT.js?style=for-the-badge) ![Discord](https://img.shields.io/discord/999633886994780201?style=for-the-badge&label=Discord&color=%235865F2)
+ 
+</div>
 
-<br><br>
+<br>
 
 This is a full-stack Discord.js Bot template that includes code for the frontend, backend, and the database of your choice—which in this case is MongoDB. I created this project as a means to learn basic web development concepts such as containerization, database management, and backend development. Additionally, I learned how to write in Typescript for this project!
 
 <br>
 
-<h2 align="center"> Sponsorship </h2>
+<div align="center">
+<a href="https://www.star-history.com/#nekorosys/nekoroshell&type=date&legend=bottom-right">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=nekorosys/nekoroshell&type=date&theme=dark&legend=bottom-right" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=nekorosys/nekoroshell&type=date&legend=bottom-right" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=nekorosys/nekoroshell&type=date&legend=bottom-right" />
+ </picture>
+</a>
+</div>
+
+<br>
+
+<div align="center">
+ 
+| **Table of Contents** |
+| :---: |
+| 💻 [Tech Stack](#tech-stack) |
+| ⚡ [Features](#features) |
+| 🤔 [Prerequisites](#prerequisites) |
+| ⚙ [Getting Started](#getting-started) |
+
+</div>
+
+<br>
+
+<a target="_blank" rel="noopener noreferrer" href="https://github.com/yusufyusie/yusufyusie/blob/main/line.gif">
+  <img src="https://github.com/yusufyusie/yusufyusie/raw/main/line.gif" alt="divider" style="max-width: 100%; display: inline-block;"/>
+</a>
+
+<br>
+
+<h2 align="center">Sponsor Me!</h2>
 <br>
 
 <div align="center">
@@ -56,7 +88,13 @@ This is a full-stack Discord.js Bot template that includes code for the frontend
 
 <br>
 
-<h2 align="center"> Tech Stack </h2>
+<a target="_blank" rel="noopener noreferrer" href="https://github.com/yusufyusie/yusufyusie/blob/main/line.gif">
+  <img src="https://github.com/yusufyusie/yusufyusie/raw/main/line.gif" alt="divider" style="max-width: 100%; display: inline-block;"/>
+</a>
+
+<br>
+
+<h2 align="center">Tech Stack</h2>
 <br>
 
 <div align="center">
@@ -88,7 +126,7 @@ This is a full-stack Discord.js Bot template that includes code for the frontend
 
 <br>
 
-<h2 align="center"> Features </h2>
+<h2 align="center">Features</h2>
 
 - Documentation - Coming soon!
 - **Database-agnostic Backend** - Done via abstraction layer between the active DB implementation (currently MongoDB) and the data handlers. This makes it easier to swap from one database to another if necessary.
@@ -101,8 +139,9 @@ This is a full-stack Discord.js Bot template that includes code for the frontend
 
 <br>
 
-<h2 align="center"> This template assumes you already... </h2>
+<h2 align="center">Prerequisites</h2>
 
+This template assumes you already...
 - Know how to use **Docker** and **Docker Compose**.
 - Know how to use **MongoDB**.
 - Have registered an App at the Discord Developer Portal.
@@ -112,7 +151,7 @@ This is a full-stack Discord.js Bot template that includes code for the frontend
 
 <br>
 
-<h2 align="center"> Getting Started </h2>
+<h2 align="center">Getting Started</h2>
 
 ### Configuration
 Before running the project, you must configure your environment variables.
