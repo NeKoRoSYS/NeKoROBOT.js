@@ -1,23 +1,21 @@
 # NeKoROBOT.js
 
 A full-stack Discord.js Bot template:
-- Frontend
-  - Typescript
-  - Node.js v20
-  - Discord.js v14
-- Backend
-  - Python
-  - MongoDB
 
-## This template assumes you already..
-- Have Node.js and the virutual environment for Python set up.
-- Know how to use Docker.
-- Know how to use MongoDB.
-- Installed the project's dependencies (eg. `package-lock.json` for Node.js and `requirements.txt` for Python)
-  - I recommend making a virtual environment within the `core` folder to install packages and run the database so that it won't mess with your global stuff.
+Tech Stack
+- **Frontend:** TypeScript, Node.js (v20), Discord.js (v14)
+- **Backend:** Python (v3.12+), WebSockets
+- **Database:** MongoDB
 
 ## Features:
-- Database-agnostic Backend - Done via abstraction layer that sits between current DB implementation (MongoDB) and the DB repository and handler.
-- Hardened - Uses `.env` to hide secret variables and requires an API Token for the database to run with the bot and nothng else.
-- Example CRUD (Create, Read, Update, Delete) Commands - Generic architecture for database that the Discord bot can interact with via slash commands.
-- Deployable - Install Docker on remote servers and run this project as a container by building it as images.
+- **Database-agnostic Backend** - Done via abstraction layer between the active DB implementation (currently MongoDB) and the data handlers. This makes it easier to swap from one database to another if necessary.
+- **Hardened Security** - Uses `.env` to hide secret variables and requires an API Token to securely establish a WebSocket connection from the bot to the database.
+- **Example CRUD Commands** - Comes with generic Create, Read, Update, and Delete slash commands out of the box to demo how the Discord bot interacts with the Python database layer.
+- **Deployable and Fully Containerized** - Install Docker on your remote server, build the project as images, and run.
+
+## This template assumes you already..
+- Know how to use **Docker** and **Docker Compose**.
+- Know how to use **MongoDB**.
+- Have **Node.js** and `npm` to install `package-lock.json` dependencies.
+- Have a virutual environment for **Python** and `pip` to install dependencies in `requirements.txt`.
+  - I recommend making a virtual environment within the `core` folder for there you can install the packages locally and run the database so that it won't mess with your global environment.
