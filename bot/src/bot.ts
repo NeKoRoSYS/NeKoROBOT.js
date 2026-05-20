@@ -1,4 +1,8 @@
-import 'dotenv/config';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
 import { Events, Guild } from 'discord.js';
 import { BotClient } from './structures/BotClient';
 import { load_components, load_cmds, deploy_cmds, load_events, delete_cmd } from './handler';
