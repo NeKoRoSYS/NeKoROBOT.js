@@ -50,17 +50,10 @@ export class BackendService {
                         this.client.wsRequests.delete(payload.interaction_id);
                     }
                 }
+                
+                // if you ever want the Python backend to push events down to Discord 
+                // independently, you would catch those global events here using payload.event :D
 
-                if (payload.event === BackendEvent.ACCOUNT_LINKED && payload.discord_id) {
-                    try {
-                        const user = await this.client.users.fetch(payload.discord_id);
-                        if (user) {
-                            await user.send(`Your Standoff 2 ID (\`${payload.standoff2_id}\`) was successfully verified!`);
-                        }
-                    } catch (error) {
-                        console.warn(`Could not send DM to user ${payload.discord_id}`);
-                    }
-                }
             } catch (parseError) {
                 console.error('Failed to process WebSocket message:', parseError);
             }
