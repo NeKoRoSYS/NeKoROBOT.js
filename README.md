@@ -126,7 +126,6 @@ A lot of the Discord.js bot templates I've seen online are mainly designed for b
       
   <td align="center" valign="top" width="33%">
         <b>DevOps</b><br><br>
-        <a href="https://github.com/" target="_blank"><img style="margin: 5px" src="https://profilinator.rishav.dev/skills-assets/git-scm-icon.svg" alt="Git" height="50"/></a>  
         <a href="https://docker.com/" target="_blank"><img style="margin: 5px" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/docker.png" height="50"/></a>  
         <a href="https://www.gnu.org/software/bash/" target="_blank"><img style="margin: 5px" src="https://profilinator.rishav.dev/skills-assets/gnu_bash-icon.svg" alt="Bash" height="50"/></a> 
       </td>
