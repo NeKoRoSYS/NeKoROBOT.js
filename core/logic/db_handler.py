@@ -5,6 +5,7 @@ from db.repo_factory import db
 from pymongo.errors import DuplicateKeyError
 
 # -- bot --
+# TODO introduce Pydantic
 
 load_dotenv()
 TOKEN = os.getenv('APITOKEN')
