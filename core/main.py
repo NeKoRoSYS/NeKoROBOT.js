@@ -12,6 +12,7 @@ import websockets
 import collections
 import time
 
+# Helps prevent spam
 class RateLimiter:
     def __init__(self, max_actions: int, timeframe: float = 1.0):
         self.max_actions = max_actions
@@ -30,6 +31,7 @@ class RateLimiter:
             
         return False
 
+# The server
 class WebSocketServer:
     def __init__(self):
         load_dotenv()
@@ -42,9 +44,11 @@ class WebSocketServer:
         if not self.HEADER:
             raise ValueError("FATAL ERROR: The 'HEADER' environment variable is not set or empty in .env file.")
     
+        # -- Initialization goes beyond here if the ENV variables are set up correctly
+        
         self.authenticated_clients = set()
         
-        self.ROUTES = {
+        self.ROUTES = { # Every string of route has a corresponding function found in root/core/logic/db_handler.py
             'handshake': logic.db_handler.handle_handshake,
             'create_user': logic.db_handler.handle_create,
             'read_user': logic.db_handler.handle_read,
@@ -70,8 +74,12 @@ class WebSocketServer:
             await websocket.close(code=1008, reason="Unauthorized")
             return
         
+        # -- Connection will only pass if the headers that the Discord.js bot sent matches with the headers set in the ENV variables
+        
         try:
             first_message = await asyncio.wait_for(websocket.recv(), timeout=5.0)
+            
+            # A strict 5-second window where a handshake must be done
             
             payload = json.loads(first_message)
             if not isinstance(payload, dict):
@@ -91,15 +99,15 @@ class WebSocketServer:
                 await websocket.close(code=1008, reason="Unauthorized")
                 return
 
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError: # No handshake made in the 5-second window
             logging.warning("Connection dropped: Handshake timeout.")
             await websocket.close(code=1008, reason="Handshake Timeout")
             return
-        except (json.JSONDecodeError, ValidationError):
-            logging.warning("Dropped connection: Malformed handshake payload.")
+        except (json.JSONDecodeError, ValidationError): # The handshake format isn't correct
+            logging.error("Dropped connection: Malformed handshake payload.")
             await websocket.close(code=1008, reason="Invalid Payload")
             return
-        except Exception as e:
+        except Exception as e: # Something else is wrong
             logging.error(f"Handshake error: {e}")
             await websocket.close(code=1011, reason="Internal Error")
             return
@@ -115,8 +123,7 @@ class WebSocketServer:
                             "message": "Too many requests. Please slow down.",
                             "interaction_id": None
                         }))
-                        continue
-                    
+                        continue # Tell user to slow down before trying again
                     
                     try:
                         payload = json.loads(message)
@@ -130,13 +137,13 @@ class WebSocketServer:
                     action = data.action
                     interaction_id = data.interaction_id
 
-                    if websocket not in self.authenticated_clients:
+                    if websocket not in self.authenticated_clients: # Block unauthorized clients
                         logging.error(f"Blocked unauthenticated command attempt: {action}")
                         await websocket.send(json.dumps({"error": True, "message": "Unauthorized. Handshake required."}))
                         await websocket.close(code=1008, reason="Policy Violation")
                         return
                         
-                    handler = self.ROUTES.get(action)
+                    handler = self.ROUTES.get(action) # The routes that I discussed earlier on are handled here
                     if handler:
                         try:
                             await handler(websocket, payload, interaction_id)
@@ -165,7 +172,7 @@ class WebSocketServer:
         print("Initializing database indexes...")
         await db.initialize_all()
 
-        server = websockets.serve(self.handle_connection, host, port, ping_interval=20, ping_timeout=20)
+        server = websockets.serve(self.handle_connection, host, port, ping_interval=20, ping_timeout=20, max_size=1_048_576)
         
         print(f"Python WebSocket server listening on ws://{host}:{port}")
         async with server:
