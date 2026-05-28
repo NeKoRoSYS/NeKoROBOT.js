@@ -14,6 +14,8 @@ CLIENTHEADER=TemplateBot/1.0
 # Database Configuration (MongoDB)
 DBENGINE=mongodb
 DBURI=mongodb+srv://<username>:<password>@<cluster-url>/?retryWrites=true&w=majority&appName=YourAppName
+VALKEYPASSWORD=your_secure_valkey_password_here
+VALKEYURL=valkey://:${VALKEYPASSWORD}@valkey:6379
 
 # Security
 SALT=your_random_salt_string_here

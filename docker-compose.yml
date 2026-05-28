@@ -1,23 +1,49 @@
 services:
+  valkey:
+    image: valkey/valkey:latest
+    command: valkey-server --requirepass ${VALKEYPASSWORD}
+    container_name: valkey-store
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   core:
     build:
       context: ./core
       dockerfile: Dockerfile
-    container_name: bot-core
+    container_name: nexsplit-core
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - VALKEY_HOST=valkey
+      - VALKEY_PORT=6379
+      - VALKEYURL=valkey://:${VALKEYPASSWORD}@valkey:6379
     ports:
       - "8000:8000"
+    depends_on:
+      - valkey
     volumes:
       - ./core:/app
       - /app/__pycache__
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   bot:
     build:
       context: ./bot
       dockerfile: Dockerfile
-    container_name: bot-runtime
+    container_name: nexsplit-runtime
     restart: unless-stopped
     dns:
       - 8.8.8.8
@@ -25,9 +51,17 @@ services:
     env_file:
       - .env
     environment:
-      - APIURL=http://core:8000
+      - APIURL=http://core:8000/ws
     depends_on:
       - core
     volumes:
       - ./bot:/usr/src/app
       - /usr/src/app/node_modules
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  valkey_data:

@@ -138,6 +138,9 @@ A lot of the Discord.js bot templates I've seen online are mainly designed for b
 <h2 align="center">Features</h2>
 
 - **Database-agnostic Backend** - Done via abstraction layer between the active DB implementation (currently MongoDB) and the data handlers. This makes it easier to swap from one database to another if necessary.
+- **Scalable**
+  - Uses `valkey`, an open-source version of Redis to manage concurrency.
+  - Uses FastAPI to handle WebSocket and REST endpoints. This makes it easier to integrate a dashboard later on.
 - **Hardened Security**
   - Uses `.env` to hide secret variables and requires an API Token to securely establish a WebSocket connection from the bot to the database.
   - Uses `pydantic` to enforce data formats and avoid SQL injections and the like.
@@ -155,7 +158,6 @@ A lot of the Discord.js bot templates I've seen online are mainly designed for b
 - The codebase is hardened and production-ready but it is not secure over the internet. To ensure security, add another layer of protection by setting up `nginx` (webserver) and `certbot` (SSL certificates) on your Linux VPS if you intend to deploy this bot on remote servers.
 - Make sure to sanitize the DB by using `motor` and passing structured dictionaries as data.
 - Use `asyncio` for the Python backend so that heavy-duty processing won't block bot function.
-- `self.authenticated_clients` in `WebSocketServer` of **main.py** only supports a single instance or session. You may have to integrate Redis for this one.
 - Replace the static handshake with JWT if you want to introduce another client connecting to the server.
 
 <br>

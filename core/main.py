@@ -1,19 +1,20 @@
-import json
+import os
+import time
+import orjson
 import asyncio
 import logging
-import os
 import secrets
+import collections
 from dotenv import load_dotenv
 from pydantic import ValidationError
 from contextlib import asynccontextmanager
+import valkey.asyncio as valkey
+from logic.routes import ROUTES
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from db.db_schemas import BasePayload
 from db.repo_factory import db
 import logic.db_handler
-import collections
-import time
 
-# Helps prevent spam
 class RateLimiter:
     def __init__(self, max_actions: int, timeframe: float = 1.0):
         self.max_actions = max_actions
@@ -32,12 +33,35 @@ class RateLimiter:
             
         return False
 
-# The server
+class DistributedRateLimiter:
+    """Sliding-window rate limiter utilizing a distributed Valkey cluster."""
+    def __init__(self, valkey_client: valkey.Valkey, max_actions: int = 25, timeframe: float = 1.0):
+        self.vk = valkey_client
+        self.max_actions = max_actions
+        self.timeframe = timeframe
+
+    async def is_allowed(self, client_id: str) -> bool:
+        """Determines if a client is within their allowed action threshold."""
+        key = f"rate_limit:{client_id}"
+        now = time.time()
+        clear_before = now - self.timeframe
+        
+        async with self.vk.pipeline(transaction=True) as pipe:
+            pipe.zremrangebyscore(key, 0, clear_before)
+            pipe.zcard(key)
+            pipe.zadd(key, {str(now): now})
+            pipe.expire(key, int(self.timeframe) + 2)
+            _, current_count, _, _ = await pipe.execute()
+            
+        return current_count < self.max_actions
+
 class WebSocketServer:
     def __init__(self):
         load_dotenv()
         self.TOKEN = os.getenv('APITOKEN')
         self.HEADER = os.getenv('CLIENTHEADER')
+        self.VALKEYURL = os.getenv('VALKEYURL', 'valkey://localhost:6379')
+        self.CHANNELNAME = "ws_broadcast"
 
         if not self.TOKEN:
             raise ValueError("FATAL ERROR: The 'TOKEN' environment variable is not set or empty in .env file.")
@@ -45,31 +69,61 @@ class WebSocketServer:
         if not self.HEADER:
             raise ValueError("FATAL ERROR: The 'HEADER' environment variable is not set or empty in .env file.")
     
-        # -- Initialization goes beyond here if the ENV variables are set up correctly
-        
-        self.authenticated_clients = set()
-        
         self.app = FastAPI(lifespan=self.lifespan)
         self.app.add_api_websocket_route("/ws", self.websocket_endpoint)
-        
-        self.ROUTES = { # Every string of route has a corresponding function found in root/core/logic/db_handler.py
-            'handshake': logic.db_handler.handle_handshake,
-            'create_user': logic.db_handler.handle_create,
-            'read_user': logic.db_handler.handle_read,
-            'update_user': logic.db_handler.handle_update,
-            'delete_user': logic.db_handler.handle_delete
-        }
+        self.ROUTES = ROUTES
+        self.local_connections = {}
+        self.vk = None
+        self.limiter = None
+        self.pubsub_task = None
         
     @asynccontextmanager
     async def lifespan(self, app: FastAPI):
         logging.info("Initializing database indexes...")
         await db.initialize_all()
+        logging.info("Connecting to Valkey...")
+        self.vk = valkey.from_url(self.VALKEYURL, decode_responses=True)
+        self.limiter = DistributedRateLimiter(self.vk, max_actions=25, timeframe=1.0)
+        self.pubsub_task = asyncio.create_task(self._valkey_pubsub_listener())
         yield
+        if self.pubsub_task:
+            self.pubsub_task.cancel()
+            try:
+                await self.pubsub_task
+            except asyncio.CancelledError:
+                pass
+        await self.vk.close()
+        
+    async def _valkey_pubsub_listener(self):
+        """Listens to the Valkey cluster channel and distributes events to local sockets."""
+        ps = self.vk.pubsub()
+        await ps.subscribe(self.CHANNELNAME)
+        logging.info(f"Subscribed globally to Valkey routing bus channel: {self.CHANNELNAME}")
+        
+        try:
+            async for message in ps.listen():
+                if message["type"] != "message":
+                    continue
+                
+                try:
+                    packet = orjson.loads(message["data"])
+                    target_id = packet.get("target_client_id")
+                    payload_data = packet.get("data")
+                    target_socket = self.local_connections.get(target_id)
+                    if target_socket:
+                        await target_socket.send_bytes(orjson.dumps(payload_data))
+                except Exception as e:
+                    logging.error(f"Error distributing message payload over PubSub: {e}")
+        except asyncio.CancelledError:
+            logging.info("Valkey Pub/Sub listener routine shutdown smoothly.")
+        finally:
+            await ps.unsubscribe(self.CHANNELNAME)
         
     async def websocket_endpoint(self, websocket: WebSocket):
         logging.info("New WebSocket connection established.")
         
         await websocket.accept()
+        client_ip = websocket.client.host
         
         logging.info(f"Incoming headers: {websocket.headers}")
         
@@ -86,14 +140,10 @@ class WebSocketServer:
             await websocket.close(code=1008, reason="Unauthorized")
             return
         
-        # -- Connection will only pass if the headers that the Discord.js bot sent matches with the headers set in the ENV variables
-        
         try:
             first_message = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
             
-            # A strict 5-second window where a handshake must be done
-            
-            payload = json.loads(first_message)
+            payload = orjson.loads(first_message)
             if not isinstance(payload, dict):
                 raise ValueError("Handshake payload is not a dictionary")
             data = BasePayload(**payload)
@@ -105,88 +155,82 @@ class WebSocketServer:
                 
             success = await logic.db_handler.handle_handshake(websocket, payload, data.interaction_id)
             if success:
-                self.authenticated_clients.add(websocket)
+                self.local_connections[client_id] = websocket
+                await self.vk.sadd("authenticated_clients", client_id)
                 logging.info("Client successfully authenticated.")
             else:
                 await websocket.close(code=1008, reason="Unauthorized")
                 return
 
-        except asyncio.TimeoutError: # No handshake made in the 5-second window
-            logging.warning("Connection dropped: Handshake timeout.")
-            await websocket.close(code=1008, reason="Handshake Timeout")
-            return
-        except (json.JSONDecodeError, ValidationError): # The handshake format isn't correct
-            logging.error("Dropped connection: Malformed handshake payload.")
-            await websocket.close(code=1008, reason="Invalid Payload")
-            return
-        except Exception as e: # Something else is wrong
-            logging.error(f"Handshake error: {e}")
-            await websocket.close(code=1011, reason="Internal Error")
+        except (asyncio.TimeoutError, orjson.JSONDecodeError, ValidationError, Exception) as e:
+            logging.error(f"Handshake failure: {e}")
+            await websocket.close(code=1008, reason="Handshake Error")
             return
         
-        limiter = RateLimiter(max_actions=25, timeframe=1)
         try:
             while True:
                 message = await websocket.receive_text()
                 
-                if not limiter.is_allowed():
-                    logging.warning("Rate limit exceeded for a client.")
-                    await websocket.send_json({
-                        "error": True,
-                        "message": "Too many requests. Please slow down.",
+                if len(message) > 65536:  # 64 KB limit
+                    logging.warning(f"Payload from {client_id} exceeded limits.")
+                    continue
+
+                if not await self.limiter.is_allowed(client_id):
+                    await websocket.send_bytes(orjson.dumps({
+                        "error": True, 
+                        "message": "Too many requests. Please slow down.", 
                         "interaction_id": None
-                    })
-                    continue # Tell user to slow down before trying again
+                    }))
+                    continue
                 
                 try:
-                    payload = json.loads(message)
+                    payload = orjson.loads(message)
                     if not isinstance(payload, dict):
                         raise ValueError("Payload is not a dictionary")
                     data = BasePayload(**payload)
-                except (json.JSONDecodeError, ValidationError, ValueError) as e:
+                except (orjson.JSONDecodeError, ValidationError, ValueError) as e:
                     logging.error(f"Dropped malformed base payload: {e}")
                     continue
                 
                 action = data.action
                 interaction_id = data.interaction_id
 
-                if websocket not in self.authenticated_clients: # Block unauthorized clients
-                    logging.error(f"Blocked unauthenticated command attempt: {action}")
-                    await websocket.send_json({"error": True, "message": "Unauthorized. Handshake required."})
+                if not await self.vk.sismember("authenticated_clients", client_id):
                     await websocket.close(code=1008, reason="Policy Violation")
                     return
                     
-                handler = self.ROUTES.get(action) # The routes that I discussed earlier on are handled here
+                handler = self.ROUTES.get(action)
                 if handler:
                     try:
                         await handler(websocket, payload, interaction_id)
                     except Exception as e:
-                        logging.error(f"Internal Error in {action}: {e}")
-                        await websocket.send_json({
-                            "error": True, 
-                            "message": "Internal server error occurred.", 
-                            "interaction_id": interaction_id
-                        })
+                        logging.error(f"Internal Error in handler execution logic {action}: {e}")
+                        await websocket.send_bytes(orjson.dumps({
+                            "error": True, "message": "Internal server error.", "interaction_id": interaction_id
+                        }))
                 else:
-                    logging.error(f"Unknown action received: {action}")
-
+                    logging.error(f"Unknown action: {action}")
+        
         except WebSocketDisconnect:
             logging.info("WebSocket connection closed cleanly.")
         except Exception as e:
             logging.exception("An unexpected WebSocket connection error occurred:")
         finally:
-            if websocket in self.authenticated_clients:
-                self.authenticated_clients.remove(websocket)
+            self.local_connections.pop(client_id, None)
+            if client_id:
+                await self.vk.srem("authenticated_clients", client_id)
+                await self.vk.delete(f"rate_limit:{client_id}")
 
 server = WebSocketServer()
 app = server.app
 
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
 if __name__ == "__main__":
     import uvicorn
-    logging.basicConfig(
-        level=logging.ERROR, 
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
     uvicorn.run(
         "main:app", 
         host="0.0.0.0", 
