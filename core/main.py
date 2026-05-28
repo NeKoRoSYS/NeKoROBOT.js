@@ -166,7 +166,7 @@ class WebSocketServer:
             logging.exception("An unexpected WebSocket connection error occurred:")
         finally:
             if websocket in self.authenticated_clients:
-                self.authenticated_clients.remove(websocket)
+                self.authenticated_clients.remove(websocket) 
 
     async def start(self, host: str = "0.0.0.0", port: int = 8000):
         print("Initializing database indexes...")
