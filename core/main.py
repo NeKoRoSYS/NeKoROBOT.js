@@ -1,21 +1,22 @@
-import os
-import time
-import uuid
-import jwt
-import orjson
-import asyncio
-import logging
-import secrets
-from dotenv import load_dotenv
-from pydantic import ValidationError
-from contextlib import asynccontextmanager
-import valkey.asyncio as valkey
-from api.websockets import ROUTES
-from api.rest import router as rest_router
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from db.db_schemas import BasePayload
-from db.db_factory import db
-import logic.db_handler
+import os # used to load env variables
+import time # used for dql
+import uuid # random identifiers
+import jwt # for access tokens
+import orjson # fast json
+import asyncio # put heavy tasks to background so it won't block the loop
+import logging # yes
+import secrets # used to compare env variables
+from dotenv import load_dotenv # uses os
+from pydantic import ValidationError # for strict schematics checking
+from contextlib import asynccontextmanager # for fastapi lifespan
+import valkey.asyncio as valkey # concurrency + off-load stuff to memory
+from api.websockets import ROUTES # custom websocket logic goes here
+from api.rest import router as rest_router # custom rest api logic goes here
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect # rest api
+from fastapi.middleware.cors import CORSMiddleware # lets the react website/dashboard access the server
+from db.db_schemas import BasePayload # carries the schematics for the token
+from db.db_factory import db # to initialize database
+import logic.db_handler # handles CRUD logic
 
 class DistributedRateLimiter:
     """Sliding-window rate limiter utilizing a distributed Valkey cluster."""
@@ -49,7 +50,6 @@ class DistributedRateLimiter:
         clear_before = now - self.timeframe
         ttl = int(self.timeframe) + 2
         
-        # evaluate the script in valkey
         result = await self.vk.eval(
             self.lua_script, 
             1,                # number of keys being passed
@@ -77,6 +77,13 @@ class Server:
         self.ROUTES = ROUTES
         self.app = FastAPI(lifespan=self.lifespan)
         self.app.include_router(rest_router)
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=["*"], # allows GET, POST, PUT, DELETE, etc.
+            allow_headers=["*"], # allows custom headers like the bot auth token
+        )
         self.app.add_api_websocket_route("/ws", self.websocket_endpoint)
         self.app.state.ws_server = self
         self.instance_id = str(uuid.uuid4())
@@ -325,6 +332,11 @@ class Server:
 
 server = Server()
 app = server.app
+
+origins = [
+    "http://localhost:3000", # react
+    "http://localhost:5173" # vite
+]
 
 logging.basicConfig(
     level=logging.INFO, 
