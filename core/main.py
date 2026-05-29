@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import jwt
 import orjson
 import asyncio
 import logging
@@ -10,7 +11,7 @@ from dotenv import load_dotenv
 from pydantic import ValidationError
 from contextlib import asynccontextmanager
 import valkey.asyncio as valkey
-from api.routes import ROUTES
+from api.websockets import ROUTES
 from api.rest import router as rest_router
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from db.db_schemas import BasePayload
@@ -62,7 +63,8 @@ class WebSocketServer:
         load_dotenv()
         self.TOKEN = os.getenv('APITOKEN')
         self.HEADER = os.getenv('CLIENTHEADER')
-        self.VALKEYURL = os.getenv('VALKEYURL', 'valkey://localhost:6379')
+        self.VALKEYURL = os.getenv('VALKEYURL')
+        self.JWTSECRET = os.getenv('JWTSECRET')
         
         self.instance_id = str(uuid.uuid4())
         self.CHANNELNAME = f"ws_instance:{self.instance_id}"
@@ -120,7 +122,14 @@ class WebSocketServer:
                     if target_socket:
                         await target_socket.send_bytes(orjson.dumps(payload_data))
                     else:
-                        logging.warning(f"Received message for {target_id}, but socket is not local.")
+                        logging.warning(f"Client {target_id} offline. Pushing to DLQ.")
+                        dlq_key = f"dlq:{target_id}"
+                        
+                        async with self.vk.pipeline(transaction=True) as pipe:
+                            pipe.rpush(dlq_key, orjson.dumps(payload_data))
+                            pipe.expire(dlq_key, 60)
+                            await pipe.execute()
+                            
                 except Exception as e:
                     logging.error(f"Error distributing message payload over PubSub: {e}")
         except asyncio.CancelledError:
@@ -133,7 +142,6 @@ class WebSocketServer:
         Intelligently routes a message to a client, whether they are connected 
         to this specific server instance or another instance in the cluster.
         """
-        # connected to this exact server instance
         if target_client_id in self.local_connections:
             try:
                 await self.local_connections[target_client_id].send_bytes(orjson.dumps(payload_data))
@@ -142,7 +150,6 @@ class WebSocketServer:
                 logging.error(f"Failed to send local message to {target_client_id}: {e}")
                 return False
 
-        # connected to a different server instance
         target_instance_id = await self.vk.get(f"client_route:{target_client_id}")
         
         if target_instance_id:
@@ -161,14 +168,7 @@ class WebSocketServer:
         
         await websocket.accept()
         
-        client_id = websocket.headers.get("Client-ID", "")
         auth_header = websocket.headers.get("Authorization", "")
-        
-        if not secrets.compare_digest(client_id, f"{self.HEADER}"):
-            logging.warning(f"Blocked connection: Invalid Client ID. Got: '{client_id}'")
-            await websocket.close(code=1008, reason="Policy Violation")
-            return
-            
         if not secrets.compare_digest(auth_header, f"Bearer {self.TOKEN}"):
             logging.warning("Blocked connection: Invalid Authorization header.")
             await websocket.close(code=1008, reason="Unauthorized")
@@ -176,28 +176,51 @@ class WebSocketServer:
         
         try:
             first_message = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
-            
             payload = orjson.loads(first_message)
+            
             if not isinstance(payload, dict):
                 raise ValueError("Handshake payload is not a dictionary")
-            data = BasePayload(**payload)
             
+            data = BasePayload(**payload)
             if data.action != 'handshake':
                 logging.warning(f"Expected handshake, got: {data.action}")
                 await websocket.close(code=1008, reason="Handshake Required First")
                 return
-                
+            
+            token = payload.get("token")
+            if not token:
+                await websocket.close(code=1008, reason="JWT Required in Handshake")
+                return
+            
+            try:
+                decoded = jwt.decode(token, self.JWTSECRET, algorithms=["HS256"])
+                client_id = str(decoded.get("sub"))
+                if not client_id:
+                    raise ValueError("JWT missing 'sub' claim")
+            except jwt.ExpiredSignatureError:
+                await websocket.close(code=1008, reason="Token Expired")
+                return
+            except jwt.InvalidTokenError:
+                await websocket.close(code=1008, reason="Invalid Token")
+                return
+            
             success = await logic.db_handler.handle_handshake(websocket, payload, data.interaction_id)
-            if success:
-                self.local_connections[client_id] = websocket
-                
-                # map the client ID to this specific server instance's UUID
-                await self.vk.set(f"client_route:{client_id}", self.instance_id)
-                logging.info(f"Client {client_id} authenticated and routed to instance {self.instance_id}.")
-            else:
-                await websocket.close(code=1008, reason="Unauthorized")
+            if not success:
+                await websocket.close(code=1008, reason="Database Handshake Rejected")
                 return
 
+            self.local_connections[client_id] = websocket
+            await self.vk.set(f"client_route:{client_id}", self.instance_id)
+            logging.info(f"Client {client_id} authenticated and routed to {self.instance_id}.")
+
+            dlq_key = f"dlq:{client_id}"
+            while True:
+                queued_msg = await self.vk.lpop(dlq_key)
+                if not queued_msg:
+                    break
+                await websocket.send_bytes(queued_msg)
+                logging.info(f"Delivered queued DLQ message to {client_id}")
+            
         except (asyncio.TimeoutError, orjson.JSONDecodeError, ValidationError, Exception) as e:
             logging.error(f"Handshake failure: {e}")
             await websocket.close(code=1008, reason="Handshake Error")
@@ -231,7 +254,6 @@ class WebSocketServer:
                 action = data.action
                 interaction_id = data.interaction_id
 
-                # fast check to ensure they haven't been globally booted
                 if not await self.vk.exists(f"client_route:{client_id}"):
                     await websocket.close(code=1008, reason="Session Invalidated")
                     return
@@ -255,8 +277,6 @@ class WebSocketServer:
         finally:
             self.local_connections.pop(client_id, None)
             if client_id:
-                # only delete the global map if THIS instance still owns it
-                # it prevents race conditions if the client reconnected rapidly to another instance
                 current_route = await self.vk.get(f"client_route:{client_id}")
                 if current_route == self.instance_id:
                     await self.vk.delete(f"client_route:{client_id}")

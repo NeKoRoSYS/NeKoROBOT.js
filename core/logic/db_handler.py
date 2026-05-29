@@ -10,8 +10,6 @@ from pymongo.errors import DuplicateKeyError
 load_dotenv()
 TOKEN = os.getenv('APITOKEN')
 
-in_flight_requests = set()
-
 if not TOKEN:
     raise ValueError("FATAL ERROR: 'TOKEN' is missing in .env file.")
 
@@ -61,7 +59,7 @@ async def handle_create(websocket, payload, interaction_id):
         await websocket.send_json({"error": True, "interaction_id": interaction_id, "message": "A link request is already processing. Please wait."})
         return
     
-    try: # You might have to remove in_flight_requests in the future if you want horizontal scaling
+    try:
         success = await create_user(discord_id, username)
         if success:
             await websocket.send_json({"event": "created", "interaction_id": interaction_id})
@@ -69,8 +67,8 @@ async def handle_create(websocket, payload, interaction_id):
             await websocket.send_json({"error": True, "interaction_id": interaction_id, "message": "User already exists!"})
         pass
     finally:
-        in_flight_requests.remove(discord_id)
-
+        await vk.delete(lock_key)
+        
 async def handle_read(websocket, payload, interaction_id):
     try:
         data = DiscordUserPayload(**payload)
