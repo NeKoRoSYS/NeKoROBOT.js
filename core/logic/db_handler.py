@@ -22,20 +22,8 @@ async def handle_handshake(websocket, payload, interaction_id):
             "error": True, 
             "message": f"Invalid payload format: {e.errors()[0]['msg']}"
         })
-        return
-    
-    bot_id = data.bot_id
-    auth_token = data.auth_token
-    
-    if auth_token != TOKEN:
-        print(f"Blocked unauthorized handshake attempt from bot ID: {bot_id}")
-        await websocket.send_json({
-            "error": True, 
-            "message": "Unauthorized: Invalid API Token."
-        })
         return False
-
-    print(f"Handshake successful with bot: {bot_id}")
+    
     return True
 
 async def handle_create(websocket, payload, interaction_id):
