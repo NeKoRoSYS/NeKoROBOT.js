@@ -1,5 +1,6 @@
 import os
 import time
+import uuid
 import orjson
 import asyncio
 import logging
@@ -9,10 +10,11 @@ from dotenv import load_dotenv
 from pydantic import ValidationError
 from contextlib import asynccontextmanager
 import valkey.asyncio as valkey
-from logic.routes import ROUTES
+from api.routes import ROUTES
+from api.rest import router as rest_router
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from db.db_schemas import BasePayload
-from db.repo_factory import db
+from db.db_factory import db
 import logic.db_handler
 
 class RateLimiter:
@@ -61,7 +63,9 @@ class WebSocketServer:
         self.TOKEN = os.getenv('APITOKEN')
         self.HEADER = os.getenv('CLIENTHEADER')
         self.VALKEYURL = os.getenv('VALKEYURL', 'valkey://localhost:6379')
-        self.CHANNELNAME = "ws_broadcast"
+        
+        self.instance_id = str(uuid.uuid4())
+        self.CHANNELNAME = f"ws_instance:{self.instance_id}"
 
         if not self.TOKEN:
             raise ValueError("FATAL ERROR: The 'TOKEN' environment variable is not set or empty in .env file.")
@@ -70,6 +74,8 @@ class WebSocketServer:
             raise ValueError("FATAL ERROR: The 'HEADER' environment variable is not set or empty in .env file.")
     
         self.app = FastAPI(lifespan=self.lifespan)
+        self.app.state.ws_server = self
+        self.app.include_router(rest_router)
         self.app.add_api_websocket_route("/ws", self.websocket_endpoint)
         self.ROUTES = ROUTES
         self.local_connections = {}
@@ -95,10 +101,10 @@ class WebSocketServer:
         await self.vk.close()
         
     async def _valkey_pubsub_listener(self):
-        """Listens to the Valkey cluster channel and distributes events to local sockets."""
+        """Listens ONLY to this specific instance's channel for incoming remote messages."""
         ps = self.vk.pubsub()
         await ps.subscribe(self.CHANNELNAME)
-        logging.info(f"Subscribed globally to Valkey routing bus channel: {self.CHANNELNAME}")
+        logging.info(f"Instance {self.instance_id} subscribed to routing bus channel: {self.CHANNELNAME}")
         
         try:
             async for message in ps.listen():
@@ -109,23 +115,51 @@ class WebSocketServer:
                     packet = orjson.loads(message["data"])
                     target_id = packet.get("target_client_id")
                     payload_data = packet.get("data")
+                    
                     target_socket = self.local_connections.get(target_id)
                     if target_socket:
                         await target_socket.send_bytes(orjson.dumps(payload_data))
+                    else:
+                        logging.warning(f"Received message for {target_id}, but socket is not local.")
                 except Exception as e:
                     logging.error(f"Error distributing message payload over PubSub: {e}")
         except asyncio.CancelledError:
             logging.info("Valkey Pub/Sub listener routine shutdown smoothly.")
         finally:
             await ps.unsubscribe(self.CHANNELNAME)
+
+    async def route_message(self, target_client_id: str, payload_data: dict) -> bool:
+        """
+        Intelligently routes a message to a client, whether they are connected 
+        to this specific server instance or another instance in the cluster.
+        """
+        # connected to this exact server instance
+        if target_client_id in self.local_connections:
+            try:
+                await self.local_connections[target_client_id].send_bytes(orjson.dumps(payload_data))
+                return True
+            except Exception as e:
+                logging.error(f"Failed to send local message to {target_client_id}: {e}")
+                return False
+
+        # connected to a different server instance
+        target_instance_id = await self.vk.get(f"client_route:{target_client_id}")
+        
+        if target_instance_id:
+            packet = {
+                "target_client_id": target_client_id,
+                "data": payload_data
+            }
+            await self.vk.publish(f"ws_instance:{target_instance_id}", orjson.dumps(packet))
+            return True
+
+        logging.warning(f"Could not route message: Client {target_client_id} is offline or not mapped.")
+        return False
         
     async def websocket_endpoint(self, websocket: WebSocket):
         logging.info("New WebSocket connection established.")
         
         await websocket.accept()
-        client_ip = websocket.client.host
-        
-        logging.info(f"Incoming headers: {websocket.headers}")
         
         client_id = websocket.headers.get("Client-ID", "")
         auth_header = websocket.headers.get("Authorization", "")
@@ -156,8 +190,10 @@ class WebSocketServer:
             success = await logic.db_handler.handle_handshake(websocket, payload, data.interaction_id)
             if success:
                 self.local_connections[client_id] = websocket
-                await self.vk.sadd("authenticated_clients", client_id)
-                logging.info("Client successfully authenticated.")
+                
+                # map the client ID to this specific server instance's UUID
+                await self.vk.set(f"client_route:{client_id}", self.instance_id)
+                logging.info(f"Client {client_id} authenticated and routed to instance {self.instance_id}.")
             else:
                 await websocket.close(code=1008, reason="Unauthorized")
                 return
@@ -195,8 +231,9 @@ class WebSocketServer:
                 action = data.action
                 interaction_id = data.interaction_id
 
-                if not await self.vk.sismember("authenticated_clients", client_id):
-                    await websocket.close(code=1008, reason="Policy Violation")
+                # fast check to ensure they haven't been globally booted
+                if not await self.vk.exists(f"client_route:{client_id}"):
+                    await websocket.close(code=1008, reason="Session Invalidated")
                     return
                     
                 handler = self.ROUTES.get(action)
@@ -218,7 +255,12 @@ class WebSocketServer:
         finally:
             self.local_connections.pop(client_id, None)
             if client_id:
-                await self.vk.srem("authenticated_clients", client_id)
+                # only delete the global map if THIS instance still owns it
+                # it prevents race conditions if the client reconnected rapidly to another instance
+                current_route = await self.vk.get(f"client_route:{client_id}")
+                if current_route == self.instance_id:
+                    await self.vk.delete(f"client_route:{client_id}")
+                
                 await self.vk.delete(f"rate_limit:{client_id}")
 
 server = WebSocketServer()

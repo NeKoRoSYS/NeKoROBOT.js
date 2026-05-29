@@ -7,6 +7,9 @@ from db.mongodb.user_repo import MongoUserRepository
 load_dotenv()
 ENGNINE = os.getenv('DBENGINE')
 
+if not ENGNINE:
+    raise ValueError("FATAL ERROR: 'ENGNINE' is missing in .env file.")
+
 class DatabaseFactory:
     def __init__(self):
         self.db_engine = os.getenv(ENGNINE, "mongodb").lower()
