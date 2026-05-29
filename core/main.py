@@ -39,7 +39,7 @@ class DistributedRateLimiter:
             
         return current_count < self.max_actions
 
-class WebSocketServer:
+class Server:
     "The brain. You don't have to touch this unless you now what you're doing. Implement custom logic at 'root/core/api'. :D"
     def __init__(self):
         load_dotenv()
@@ -299,7 +299,7 @@ class WebSocketServer:
             await self.vk.eval(lua_script, 1, f"client_route:{client_id}", self.instance_id)
             await self.vk.delete(f"rate_limit:{client_id}")
 
-server = WebSocketServer()
+server = Server()
 app = server.app
 
 logging.basicConfig(
