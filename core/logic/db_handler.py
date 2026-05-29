@@ -53,10 +53,14 @@ async def handle_create(websocket, payload, interaction_id):
     discord_id = data.discord_id
     username = data.username
     
-    if discord_id in in_flight_requests:
+    vk = websocket.app.state.ws_server.vk
+    lock_key = f"link_lock:{discord_id}"
+    acquired_lock = await vk.set(lock_key, "locked", nx=True, ex=5)
+    
+    if not acquired_lock:
+        await websocket.send_json({"error": True, "interaction_id": interaction_id, "message": "A link request is already processing. Please wait."})
         return
-        
-    in_flight_requests.add(discord_id)
+    
     try: # You might have to remove in_flight_requests in the future if you want horizontal scaling
         success = await create_user(discord_id, username)
         if success:
